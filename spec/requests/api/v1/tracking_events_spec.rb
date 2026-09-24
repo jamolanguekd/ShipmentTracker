@@ -60,6 +60,39 @@ RSpec.describe "Api::V1::TrackingEvents", type: :request do
         expect(json["errors"]).to be_present
       end
     end
+
+    context "webhook dispatch" do
+      before { ActiveJob::Base.queue_adapter = :test }
+
+      it "dispatches webhooks to matching endpoints" do
+        create(:webhook_endpoint, shipment: shipment, status_filters: ["in_transit"])
+        expect {
+          post "/api/v1/shipments/#{shipment.id}/tracking_events",
+            params: valid_attributes,
+            as: :json
+        }.to change(WebhookDelivery, :count).by(1)
+          .and have_enqueued_job(WebhookDeliveryJob)
+      end
+
+      it "does not dispatch webhooks when no endpoints match" do
+        create(:webhook_endpoint, shipment: shipment, status_filters: ["failed"])
+        expect {
+          post "/api/v1/shipments/#{shipment.id}/tracking_events",
+            params: valid_attributes,
+            as: :json
+        }.not_to change(WebhookDelivery, :count)
+      end
+
+      it "does not dispatch webhooks on validation failure" do
+        create(:webhook_endpoint, shipment: shipment, status_filters: [])
+        expect {
+          post "/api/v1/shipments/#{shipment.id}/tracking_events",
+            params: { tracking_event: { location: "Chicago, IL" } },
+            as: :json
+        }.not_to change(WebhookDelivery, :count)
+        expect(response).to have_http_status(:unprocessable_entity)
+      end
+    end
   end
 
   describe "GET /api/v1/shipments/:shipment_id/tracking_events" do

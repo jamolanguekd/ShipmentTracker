@@ -10,6 +10,7 @@ module Api
       def create
         @tracking_event = @shipment.tracking_events.new(tracking_event_params)
         if @tracking_event.save
+          WebhookDispatchService.call(@tracking_event)
           render json: @tracking_event, status: :created
         else
           render json: { errors: @tracking_event.errors }, status: :unprocessable_entity
